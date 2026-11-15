@@ -64,6 +64,12 @@ function displayError(error: unknown) {
     return 'فعّل تسجيل الدخول المجهول في إعدادات Authentication داخل Supabase.';
   }
   if (
+    normalized.includes('invalid supabaseurl') ||
+    normalized.includes('must be a valid http or https url')
+  ) {
+    return 'رابط Supabase غير صحيح. استخدم رابط المشروع كاملًا بصيغة https://…supabase.co.';
+  }
+  if (
     message.includes('PGRST205') ||
     message.includes('wallet_topups') ||
     message.includes('42P01')

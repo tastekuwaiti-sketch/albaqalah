@@ -7,6 +7,8 @@
 3. Add these Replit Secrets for the web app:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
+   Use the project URL in the form `https://<project-ref>.supabase.co`, not a
+   dashboard link or REST endpoint URL.
 4. Restart the `Naqwah Pay` web workflow and try a demo top-up. Refresh the page
    to confirm the saved top-up remains in the wallet balance and activity list.
 

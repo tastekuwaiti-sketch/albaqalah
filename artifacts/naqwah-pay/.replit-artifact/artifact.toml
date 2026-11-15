@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Naqwah Pay"
+description = "صفحة رئيسية لمحفظة بقالة وتقسيم فواتير للطلبة المبتعثين وزملاء السكن، تعرض رصيدًا تجريبيًا وسجل العمليات وتتيح تجربة الشحن وتقسيم الفاتورة محليًا."
+version = "1.0.0"
+id = "artifacts/naqwah-pay"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25136
+
+[services.development]
+run = "pnpm --filter @workspace/naqwah-pay run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/naqwah-pay", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/naqwah-pay/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25136"
+BASE_PATH = "/"

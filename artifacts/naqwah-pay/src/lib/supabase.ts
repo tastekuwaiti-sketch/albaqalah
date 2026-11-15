@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { normalizeSupabaseUrl } from './supabase-url';
 
 export type SavedWalletTopup = {
   id: string;
@@ -21,7 +22,7 @@ function getClient() {
     throw new Error('VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are required.');
   }
   if (!client) {
-    client = createClient(url, anonKey, {
+    client = createClient(normalizeSupabaseUrl(url), anonKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,

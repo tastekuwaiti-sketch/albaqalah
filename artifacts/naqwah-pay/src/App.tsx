@@ -54,6 +54,15 @@ function displayError(error: unknown) {
   const message =
     details?.message ?? (error instanceof Error ? error.message : String(error));
   const normalized = message.toLowerCase();
+  if (message === 'SUPABASE_URL_FORMAT') {
+    return 'تعذّر قراءة رابط المشروع كعنوان HTTP/HTTPS. انسخ قيمة Project URL وحدها دون اسم المتغير أو أي نص إضافي.';
+  }
+  if (message === 'SUPABASE_URL_DASHBOARD') {
+    return 'الرابط يشير إلى لوحة تحكم Supabase، وليس المشروع. استخدم قيمة Project URL من إعدادات Data API.';
+  }
+  if (message === 'SUPABASE_URL_NOT_PROJECT_ROOT') {
+    return 'استخدم رابط المشروع الأساسي وحده، دون مسار REST أو صفحة أو معاملات إضافية.';
+  }
   if (message.includes('VITE_SUPABASE_URL') || message.includes('VITE_SUPABASE_ANON_KEY')) {
     return 'أضف رابط Supabase والمفتاح العام إلى Replit Secrets، ثم أعد تشغيل الصفحة.';
   }

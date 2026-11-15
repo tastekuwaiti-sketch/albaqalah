@@ -1,0 +1,1 @@
+- [MVP scope and delivery](mvp-scope.md) — Keep Naqwah Pay limited to the three requested features, with small runnable steps and test payments only.

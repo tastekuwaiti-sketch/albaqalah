@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -26,37 +26,147 @@ import {
   useLocation,
   Router as WouterRouter,
 } from 'wouter';
+import {
+  loadWalletTopups,
+  saveWalletTopup,
+  type SavedWalletTopup,
+} from '@/lib/supabase';
 
 const queryClient = new QueryClient();
 
+type ActivityItem = {
+  id: string;
+  title: string;
+  detail: string;
+  amount: number;
+  type: 'split' | 'grocery' | 'topup';
+};
+
+type ConnectionStatus = 'connecting' | 'ready' | 'error';
+
+const startingDemoBalance = 284.75;
+
+function displayError(error: unknown) {
+  const details =
+    error && typeof error === 'object'
+      ? (error as { message?: string; code?: string; status?: number })
+      : undefined;
+  const message =
+    details?.message ?? (error instanceof Error ? error.message : String(error));
+  const normalized = message.toLowerCase();
+  if (message.includes('VITE_SUPABASE_URL') || message.includes('VITE_SUPABASE_ANON_KEY')) {
+    return 'أضف رابط Supabase والمفتاح العام إلى Replit Secrets، ثم أعد تشغيل الصفحة.';
+  }
+  if (
+    normalized.includes('anonymous sign-ins are disabled') ||
+    normalized.includes('anonymous_provider_disabled')
+  ) {
+    return 'فعّل تسجيل الدخول المجهول في إعدادات Authentication داخل Supabase.';
+  }
+  if (
+    message.includes('PGRST205') ||
+    message.includes('wallet_topups') ||
+    message.includes('42P01')
+  ) {
+    return 'جدول الشحنات غير جاهز. نفّذ ملف supabase/setup.sql في SQL Editor داخل Supabase.';
+  }
+  if (
+    details?.status === 401 ||
+    details?.status === 403 ||
+    normalized.includes('invalid api key') ||
+    normalized.includes('invalid jwt')
+  ) {
+    return 'تحقق من رابط Supabase والمفتاح العام anon في Replit Secrets.';
+  }
+  if (normalized.includes('failed to fetch') || normalized.includes('network')) {
+    return 'تعذّر الوصول إلى مشروع Supabase. تحقق من الرابط واتصال الإنترنت.';
+  }
+  return 'تعذّر الاتصال بـ Supabase. تحقق من الإعدادات وسياسات RLS ثم أعد المحاولة.';
+}
+
+function formatSavedDate(value: string) {
+  return new Intl.DateTimeFormat('ar-SA', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
+
+function toActivity(item: SavedWalletTopup): ActivityItem {
+  return {
+    id: `saved-topup-${item.id}`,
+    title: 'إضافة رصيد',
+    detail: `شحن تجريبي محفوظ · ${formatSavedDate(item.createdAt)}`,
+    amount: item.amount,
+    type: 'topup',
+  };
+}
+
 function Home() {
-  const [balance, setBalance] = useState(284.75);
+  const [balance, setBalance] = useState(startingDemoBalance);
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState('50');
   const [splitDone, setSplitDone] = useState(false);
   const [notice, setNotice] = useState('');
-  const [history, setHistory] = useState([
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+  const [connectionError, setConnectionError] = useState('');
+  const [savingTopup, setSavingTopup] = useState(false);
+  const [history, setHistory] = useState<ActivityItem[]>([
     { id: 'h1', title: 'حصة مشتريات الأسبوع', detail: 'تقسيم · ١٢ يونيو، ٦:٤٢ م', amount: -46.6, type: 'split' },
     { id: 'h2', title: 'مشتريات البيت', detail: 'بقالة · ١٢ يونيو، ٦:٣٨ م', amount: -186.4, type: 'grocery' },
     { id: 'h3', title: 'إضافة رصيد', detail: 'شحن تجريبي · ١٠ يونيو، ١١:١٥ ص', amount: 120, type: 'topup' },
     { id: 'h4', title: 'مشتريات سريعة', detail: 'بقالة · ٨ يونيو، ٧:٢٠ م', amount: -32.85, type: 'grocery' },
   ]);
 
-  const addBalance = (event: FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    let isCurrent = true;
+    loadWalletTopups()
+      .then((topups) => {
+        if (!isCurrent) return;
+        setBalance(
+          Number(
+            (
+              startingDemoBalance +
+              topups.reduce((total, item) => total + item.amount, 0)
+            ).toFixed(2),
+          ),
+        );
+        setHistory((current) => [
+          ...topups.map(toActivity),
+          ...current.filter((item) => !item.id.startsWith('saved-topup-')),
+        ]);
+        setConnectionStatus('ready');
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent) return;
+        setConnectionError(displayError(error));
+        setConnectionStatus('error');
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
+
+  const addBalance = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const amount = Number(topUpAmount);
     if (!Number.isFinite(amount) || amount <= 0 || amount > 1000) {
       setNotice('أدخل مبلغًا بين ١ و١٬٠٠٠ ر.س.');
       return;
     }
-    setBalance((current) => Number((current + amount).toFixed(2)));
-    setHistory((current) => [
-      { id: `topup-${Date.now()}`, title: 'إضافة رصيد', detail: 'شحن تجريبي · الآن', amount, type: 'topup' },
-      ...current,
-    ]);
-    setTopUpOpen(false);
-    setNotice(`تمت إضافة ${amount.toFixed(2)} ر.س إلى رصيدك التجريبي`);
-    window.setTimeout(() => setNotice(''), 3600);
+    if (connectionStatus !== 'ready' || savingTopup) return;
+    setSavingTopup(true);
+    try {
+      const savedTopup = await saveWalletTopup(amount);
+      setBalance((current) => Number((current + amount).toFixed(2)));
+      setHistory((current) => [toActivity(savedTopup), ...current]);
+      setTopUpOpen(false);
+      setNotice(`تم حفظ شحن ${amount.toFixed(2)} ر.س وتحديث رصيدك التجريبي`);
+      window.setTimeout(() => setNotice(''), 3600);
+    } catch (error) {
+      setNotice(displayError(error));
+    } finally {
+      setSavingTopup(false);
+    }
   };
 
   const splitOrder = () => {
@@ -98,12 +208,21 @@ function Home() {
         </div>
         <div className="household-tag"><span className="household-symbol">ب</span><span>بيت النخيل</span><ChevronLeft size={15} /></div>
       </section>
+      {connectionStatus === 'error' && (
+        <div className="connection-banner" role="alert" data-testid="status-supabase-error">
+          <CircleHelp size={17} />
+          <span>{connectionError} إذا لم يكتمل الإعداد بعد، راجع خطوات Supabase.</span>
+        </div>
+      )}
 
       <div className="dashboard-grid">
         <section className="wallet-card" data-testid="card-wallet">
           <div className="wallet-card-top">
             <div className="wallet-label"><span className="wallet-icon"><Wallet size={18} /></span><span>رصيدي التجريبي</span></div>
-            <span className="wallet-state"><span /> متاح الآن</span>
+            <span className={`wallet-state wallet-state-${connectionStatus}`} data-testid="status-supabase-connection">
+              <span />
+              {connectionStatus === 'connecting' ? 'جاري الاتصال' : connectionStatus === 'ready' ? 'محفوظ في Supabase' : 'يتطلب إعدادًا'}
+            </span>
           </div>
           <div className="balance-line" data-testid="text-wallet-balance">
             <span className="balance-number">{balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -112,7 +231,7 @@ function Home() {
           <p className="balance-note">رصيد العرض فقط — لا قيمة مالية حقيقية</p>
           <div className="wallet-bottom">
             <div className="wallet-meta"><span className="balance-mini-icon"><CreditCard size={15} /></span><span>محفظة البيت</span><span className="meta-separator">·</span><span>•• ٤٢٨١</span></div>
-            <button className="add-balance-button" onClick={() => { setTopUpOpen(true); setNotice(''); }} type="button" data-testid="button-add-balance">
+            <button className="add-balance-button" onClick={() => { setTopUpOpen(true); setNotice(''); }} type="button" disabled={connectionStatus !== 'ready'} data-testid="button-add-balance">
               <Plus size={17} strokeWidth={2.4} /> أضف رصيدًا
             </button>
           </div>
@@ -197,7 +316,7 @@ function Home() {
               </div>;
             })}
             {history.length === 0 && <div className="empty-history"><ReceiptText size={24} /><p>ستظهر هنا عملياتك القادمة</p></div>}
-            <div className="activity-footer"><span>أنت تشاهد سجلًا تجريبيًا</span><span className="privacy-mark"><CheckCircle2 size={13} /> خاص بك</span></div>
+            <div className="activity-footer"><span>الشحنات التجريبية محفوظة</span><span className="privacy-mark"><CheckCircle2 size={13} /> خاص بك</span></div>
           </div>
           <div className="friendly-note"><span className="note-mark">ن</span><p><strong>بدون حسابات محرجة.</strong> كل واحد يعرف حصته، وبس.</p></div>
         </section>
@@ -214,9 +333,11 @@ function Home() {
             <label className="amount-label" htmlFor="topup-amount">المبلغ <span>ريال سعودي</span></label>
             <div className="amount-input-wrap"><input id="topup-amount" type="number" min="1" max="1000" step="0.01" value={topUpAmount} onChange={(event) => setTopUpAmount(event.target.value)} autoFocus data-testid="input-topup-amount" /><span>ر.س</span></div>
             <div className="quick-amounts">{['25', '50', '100'].map((amount) => <button className={topUpAmount === amount ? 'quick-amount selected' : 'quick-amount'} type="button" key={amount} onClick={() => setTopUpAmount(amount)} data-testid={`button-quick-amount-${amount}`}>{amount} ر.س</button>)}</div>
-            <button className="confirm-topup" type="submit" data-testid="button-confirm-topup"><Plus size={17} /> أضف إلى الرصيد</button>
+             <button className="confirm-topup" type="submit" disabled={savingTopup || connectionStatus !== 'ready'} data-testid="button-confirm-topup">
+               <Plus size={17} /> {savingTopup ? 'جارٍ الحفظ...' : 'أضف إلى الرصيد'}
+             </button>
           </form>
-          <div className="modal-safety"><CheckCircle2 size={14} /> تجربة محلية آمنة — لا يتم حفظ بيانات دفع</div>
+          <div className="modal-safety"><CheckCircle2 size={14} /> شحن افتراضي — لا تُحفظ بيانات دفع</div>
         </section>
       </div>}
       {notice && <div className="toast-note" role="status" data-testid="status-notice"><CheckCircle2 size={17} />{notice}<button type="button" aria-label="إخفاء" onClick={() => setNotice('')}><X size={15} /></button></div>}

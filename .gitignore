@@ -17,6 +17,12 @@ out-tsc
 # dependencies
 node_modules
 
+# Local environment files must never be pushed to GitHub.
+.env
+.env.*
+!.env.example
+!.env.sample
+
 # IDEs and editors
 /.idea
 .project
